@@ -1,0 +1,5 @@
+pandas          # read and process POS/Google Sheet exports
+reportlab       # generate PDF price tags
+openpyxl        # (optional) handle Excel files if POS exports .xlsx
+requests        # (optional) push updates to CMS via API
+psycopg2-binary # PostgreSQL database adapter (binary package)

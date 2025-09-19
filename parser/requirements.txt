@@ -1,0 +1,5 @@
+flask            # Web framework for API
+pandas           # Data processing
+psycopg2-binary  # PostgreSQL database adapter
+python-dotenv    # Environment variable management
+requests         # HTTP client for API calls

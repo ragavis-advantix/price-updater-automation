@@ -1,0 +1,71 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: priceupdater_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: n8npass
+      POSTGRES_DB: priceupdater
+    volumes:
+      - ./postgres:/docker-entrypoint-initdb.d
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+
+  n8n:
+    image: n8nio/n8n
+    container_name: priceupdater_n8n
+    restart: unless-stopped
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=priceupdater
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8npass
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=adminpass
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+    ports:
+      - "5678:5678"
+    depends_on:
+      - postgres
+    volumes:
+      - ./n8n:/home/node/.n8n
+      - ./data:/data
+
+  generator:
+    build: ./generator
+    container_name: priceupdater_generator
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data:rw
+    command: [ "python", "watch.py" ]
+
+  nginx:
+    image: nginx:alpine
+    container_name: priceupdater_nginx
+    restart: unless-stopped
+    volumes:
+      - ./data:/usr/share/nginx/html:ro
+    ports:
+      - "8080:80"
+
+  parser:
+    build: ./parser
+    container_name: priceupdater_parser
+    restart: unless-stopped
+    user: "1000:1000"
+    volumes:
+      - ./data:/app/data:rw
+    ports:
+      - "5000:5000"
+    depends_on:
+      - postgres
+
+volumes:
+  pgdata:
