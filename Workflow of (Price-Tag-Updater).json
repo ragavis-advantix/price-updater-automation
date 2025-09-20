@@ -1,0 +1,375 @@
+{
+  "name": "Price-Tag-Updater",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "7b760333-60cd-4143-ac32-efe5e3bc1f8f",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -816,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "1_672hD_XnedgsJGtyuG2CLiWfKP6spPLdUyHZfSZquA"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1_672hD_XnedgsJGtyuG2CLiWfKP6spPLdUyHZfSZquA/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "5bab69d5-527d-493e-9a97-413b6b984803",
+      "name": "Read POS Price List",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [
+        -592,
+        224
+      ],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "91BTVoIkLiGB1TMP",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = [];\nconst timestamp = new Date().toISOString().split('T')[0];\n\nfor (const item of $input.all()) {\n  // Skip header row or missing SKU\n  if (!item.json.SKU || item.json.SKU === 'SKU') continue;\n\n  const currentRaw = String(item.json['CURRENT PRICE'] || \"0\");\n  const newRaw = String(item.json['NEW PRICE'] || \"0\");\n\n  const priceData = {\n    sku: item.json.SKU || '',\n    productName: item.json['PRODUCT NAME'] || '',\n    currentPrice: parseFloat(currentRaw.replace('$', '')) || 0,\n    newPrice: parseFloat(newRaw.replace('$', '')) || 0,\n    category: item.json.CATEGORY || 'General',\n    supplier: item.json.SUPPLIER || '',\n    lastUpdated: timestamp,\n    priceChange: 0,\n    changePercent: 0\n  };\n\n  // Calculate price change\n  if (priceData.currentPrice > 0) {\n    priceData.priceChange = priceData.newPrice - priceData.currentPrice;\n    priceData.changePercent = (\n      (priceData.priceChange / priceData.currentPrice) * 100\n    ).toFixed(2);\n  }\n\n  // Only include items with a price change\n  if (Math.abs(priceData.priceChange) > 0.01) {\n    items.push(priceData);\n  }\n}\n\nconsole.log(`Processing ${items.length} price changes`);\nreturn items.map(item => ({ json: item }));\n"
+      },
+      "id": "1c4d36fd-5d1e-42bf-bcb9-c1992c149d96",
+      "name": "Parse Price Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO price_update_log (\n  batch_id,\n  timestamp,\n  items_processed,\n  csv_file,\n  status,\n  notes\n)\nVALUES (\n  '{{ $json.sku }}',\n  NOW(),\n  1,\n  'updated_price.csv',\n  'success',\n  '{{ $json.productName }}'\n);\n",
+        "options": {}
+      },
+      "id": "1aa1b966-dd71-47cb-91e1-a0988737c637",
+      "name": "Log to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        -128,
+        368
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "MXiqv6jjtsVP2Yx9",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "/data/updated_price.csv",
+        "dataPropertyName": "=data",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [
+        368,
+        -144
+      ],
+      "id": "175bf1c0-b23b-42b7-afc7-31a9bcdfc1cf",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "options": {
+          "fileName": "pos_prices.csv"
+        }
+      },
+      "type": "n8n-nodes-base.convertToFile",
+      "typeVersion": 1.1,
+      "position": [
+        -16,
+        -16
+      ],
+      "id": "8ac5c8e9-2d4c-44ec-bb6f-eb37d3d35993",
+      "name": "Convert to File"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "1_672hD_XnedgsJGtyuG2CLiWfKP6spPLdUyHZfSZquA",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1-BlBkybP3xBfFzBwh7UdtRGpg7c_cNXal8tN2Eh1nws/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "SKU": "={{ $json.sku }}",
+            "PRODUCT NAME": "={{ $json.productName }}",
+            "CURRENT PRICE": "={{ $json.currentPrice }}",
+            "NEW PRICE": "={{ $json.newPrice }}"
+          },
+          "matchingColumns": [
+            "SKU"
+          ],
+          "schema": [
+            {
+              "id": "SKU",
+              "displayName": "SKU",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "PRODUCT NAME",
+              "displayName": "PRODUCT NAME",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "CURRENT PRICE",
+              "displayName": "CURRENT PRICE",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "NEW PRICE",
+              "displayName": "NEW PRICE",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "CATEGORY",
+              "displayName": "CATEGORY",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "SUPPLIER",
+              "displayName": "SUPPLIER",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        224,
+        272
+      ],
+      "id": "ec39f4ef-022c-4667-9544-5045ba26a8fa",
+      "name": "Update row in sheet1",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "91BTVoIkLiGB1TMP",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "ragavis@advantixagi.com",
+        "subject": "Daily Price Update",
+        "message": "<!doctype html> <html lang=\"en\"> <head>   <meta charset=\"utf-8\" />   <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\" />   <title>Updated POS Price List</title>   <style>     body {       font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial;       background-color: #f6f7fb;       color: #111827;       margin: 0;       padding: 24px;     }     .container {       max-width: 680px;       margin: 0 auto;       background: #ffffff;       border-radius: 10px;       box-shadow: 0 6px 18px rgba(16,24,40,0.06);       padding: 28px;     }     h1 {       margin: 0 0 12px 0;       font-size: 20px;       color: #0f172a;     }     p {       margin: 0 0 18px 0;       color: #374151;       line-height: 1.5;     }     ul {       margin: 12px 0 18px 20px;       color: #374151;       line-height: 1.6;     }     .note {       font-size: 13px;       color: #6b7280;       margin-top: 6px;     }     .signature {       margin-top: 22px;       color: #111827;       font-weight: 600;     }     .small {       font-size: 13px;       color: #6b7280;       font-weight: 400;     }     @media (max-width: 480px) {       .container { padding: 18px; }       h1 { font-size: 18px; }     }   </style> </head> <body>   <div class=\"container\" role=\"article\" aria-label=\"Updated POS Price List Notice\">     <h1>Updated POS Price List</h1>      <p>Hello Team,</p>      <p>       Please find attached the updated <strong>POS price list</strong>.        This list reflects the latest revisions and should be applied across all branches.     </p>      <h2 style=\"font-size:15px;margin-top:8px;margin-bottom:8px;color:#0f172a;\">Key Notes</h2>     <ul>       <li>Ensure the updated prices are live in your branch systems before opening hours.</li>       <li>Report any discrepancies or missing SKUs to the operations team immediately.</li>       <li>A copy of this update has been logged in our central database for tracking.</li>     </ul>      <p class=\"note\">       Thank you for your cooperation in maintaining consistency across all outlets.     </p>      <div class=\"signature\">       Best regards,<br />       <div class=\"small\">Smart Price Updater System</div>     </div>   </div> </body> </html>",
+        "options": {
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {}
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        352,
+        96
+      ],
+      "id": "7249a76c-5811-4c0d-923e-8d3f647244ba",
+      "name": "Send a message1",
+      "webhookId": "ae465892-3859-450b-aa71-3932ee41639a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "R8BYunQP6XLmPSO2",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM price_update_log ORDER BY timestamp DESC LIMIT 20;\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        192,
+        544
+      ],
+      "id": "38d0e344-98df-40d9-89d9-44edb9be18b2",
+      "name": "Execute a SQL query",
+      "credentials": {
+        "postgres": {
+          "id": "MXiqv6jjtsVP2Yx9",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [
+          {
+            "node": "Read POS Price List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read POS Price List": {
+      "main": [
+        [
+          {
+            "node": "Parse Price Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Price Data": {
+      "main": [
+        [
+          {
+            "node": "Convert to File",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Convert to File": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send a message1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update row in sheet1": {
+      "main": [
+        []
+      ]
+    },
+    "Log to Database": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "573cb407-8998-4f86-90bb-5958077a1fca",
+  "meta": {
+    "instanceId": "61c3f693dade4d6c95de2e8e0f289bd5a542f5b4de1e61e057a3a39d9d7030f8"
+  },
+  "id": "7NIsNvbcAbaCMitq",
+  "tags": []
+}
